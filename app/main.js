@@ -1,5 +1,9 @@
 import OpenAI from "openai";
 import fs from "fs/promises";
+import { exec } from "child_process";
+import { promisify } from "util";
+
+const execAsync = promisify(exec);
 
 async function main() {
   const [, , flag, prompt] = process.argv;
@@ -29,9 +33,7 @@ async function main() {
         description: "Read a file from the filesystem",
         parameters: {
           type: "object",
-          properties: {
-            path: { type: "string" },
-          },
+          properties: { path: { type: "string" } },
           required: ["path"],
         },
       },
@@ -43,11 +45,20 @@ async function main() {
         description: "Write content to a file",
         parameters: {
           type: "object",
-          properties: {
-            path: { type: "string" },
-            content: { type: "string" },
-          },
+          properties: { path: { type: "string" }, content: { type: "string" } },
           required: ["path", "content"],
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "bash",
+        description: "Execute bash shell commands",
+        parameters: {
+          type: "object",
+          properties: { command: { type: "string" } },
+          required: ["command"],
         },
       },
     },
@@ -66,7 +77,7 @@ async function main() {
 
     const message = response.choices[0].message;
 
-    // ✅ Final answer if no tool calls
+    // ✅ If no tool calls → final answer
     if (!message.tool_calls) {
       console.log(message.content.trim());
       return;
@@ -86,7 +97,6 @@ async function main() {
           content: fileContent,
         });
       } else if (call.function.name === "write") {
-        // Ensure directory exists
         await fs.mkdir(args.path.split("/").slice(0, -1).join("/"), {
           recursive: true,
         });
@@ -96,6 +106,21 @@ async function main() {
           tool_call_id: call.id,
           content: `File written: ${args.path}`,
         });
+      } else if (call.function.name === "bash") {
+        try {
+          const { stdout, stderr } = await execAsync(args.command);
+          messages.push({
+            role: "tool",
+            tool_call_id: call.id,
+            content: stdout + stderr,
+          });
+        } catch (err) {
+          messages.push({
+            role: "tool",
+            tool_call_id: call.id,
+            content: `Error: ${err.message}`,
+          });
+        }
       }
     }
   }
