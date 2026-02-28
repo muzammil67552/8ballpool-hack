@@ -18,10 +18,38 @@ async function main() {
     baseURL: baseURL,
   });
 
-  const response = await client.chat.completions.create({
-    model: "anthropic/claude-haiku-4.5",
-    messages: [{ role: "user", content: prompt }],
-  });
+  // ✅ UPDATED BLOCK — tools added
+ const response = await client.chat.completions.create({
+  model: "anthropic/claude-haiku-4.5",
+  messages: [
+    {
+      role: "system",
+      content:
+        "You have access to tools. Answer with only the final number. No explanation.",
+    },
+    { role: "user", content: prompt },
+  ],
+  tools: [
+    {
+      type: "function",
+      function: {
+        name: "read",
+        description: "Read a file from the filesystem",
+        parameters: {
+          type: "object",
+          properties: {
+            path: {
+              type: "string",
+              description: "Path to the file",
+            },
+          },
+          required: ["path"],
+        },
+      },
+    },
+  ],
+  tool_choice: "auto", // ⭐ IMPORTANT
+});
 
   if (!response.choices || response.choices.length === 0) {
     throw new Error("no choices in response");
