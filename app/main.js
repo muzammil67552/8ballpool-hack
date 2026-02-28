@@ -15,15 +15,15 @@ async function main() {
   }
 
   const client = new OpenAI({
-    apiKey: apiKey,
-    baseURL: baseURL,
+    apiKey,
+    baseURL,
   });
 
   const messages = [
     {
       role: "system",
       content:
-        "You have access to tools. Respond with only the final answer.",
+        "You are an agent with tools. Use tools if needed and respond with only the final answer.",
     },
     { role: "user", content: prompt },
   ];
@@ -48,28 +48,35 @@ async function main() {
     },
   ];
 
-  // 🔹 First request (LLM decides if tool is needed)
-  let response = await client.chat.completions.create({
-    model: "anthropic/claude-haiku-4.5",
-    messages,
-    tools,
-    tool_choice: "auto",
-  });
+  while (true) {
+    const response = await client.chat.completions.create({
+      model: "anthropic/claude-haiku-4.5",
+      messages,
+      tools,
+      tool_choice: "auto",
+    });
 
-  if (!response.choices || response.choices.length === 0) {
-    throw new Error("no choices in response");
-  }
+    if (!response.choices || response.choices.length === 0) {
+      throw new Error("no choices in response");
+    }
 
-  let message = response.choices[0].message;
+    const message = response.choices[0].message;
 
-  // 🔹 If tool call happens → execute read tool
-  if (message.tool_calls) {
+    // ✅ If no tool call → final answer
+    if (!message.tool_calls) {
+      console.log(message.content.trim());
+      return;
+    }
+
+    // Add assistant message with tool call
+    messages.push(message);
+
+    // Execute each tool call
     for (const call of message.tool_calls) {
       if (call.function.name === "read") {
         const args = JSON.parse(call.function.arguments);
         const fileContent = await fs.readFile(args.path, "utf-8");
 
-        messages.push(message);
         messages.push({
           role: "tool",
           tool_call_id: call.id,
@@ -77,18 +84,7 @@ async function main() {
         });
       }
     }
-
-    // 🔹 Second request with tool result
-    response = await client.chat.completions.create({
-      model: "anthropic/claude-haiku-4.5",
-      messages,
-    });
-
-    message = response.choices[0].message;
   }
-
-  // ✅ Final output
-  console.log(message.content.trim());
 }
 
 main();
